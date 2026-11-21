@@ -1,0 +1,5 @@
+flask
+gunicorn
+yt-dlp
+python-dotenv
+requests
