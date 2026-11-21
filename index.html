@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YTClip — World's Fastest YouTube Downloader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="bg-gradient"></div>
+<div class="bg-grid"></div>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="logo">
+    <div class="logo-mark">▶</div>
+    <span>YTClip</span>
+  </div>
+  <div class="nav-actions">
+    <div class="swatches" id="swatches">
+      <div class="swatch active" data-color="#ff3b5c" style="background:#ff3b5c" title="Rose"></div>
+      <div class="swatch" data-color="#8b5cf6" style="background:#8b5cf6" title="Violet"></div>
+      <div class="swatch" data-color="#3b82f6" style="background:#3b82f6" title="Blue"></div>
+      <div class="swatch" data-color="#10b981" style="background:#10b981" title="Emerald"></div>
+      <div class="swatch" data-color="#f59e0b" style="background:#f59e0b" title="Amber"></div>
+    </div>
+    <div class="color-picker" title="Custom accent color">
+      <input type="color" id="customColor" value="#ff3b5c">
+    </div>
+    <button class="icon-btn" id="themeToggle" title="Toggle theme">🌙</button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-badge"><span class="dot"></span> Fastest YouTube clip downloader</div>
+  <h1>Download any <span class="grad">YouTube video</span><br>or audio by timestamps</h1>
+  <p>Paste a link, set start & end, pick quality — get a perfectly trimmed clip in seconds. No ads, no watermarks.</p>
+</section>
+
+<!-- 16:9 Showcase -->
+<div class="showcase">
+  <div class="showcase-content">
+    <div class="showcase-icon">⬇</div>
+    <div class="showcase-title">Clip any moment</div>
+    <div class="showcase-sub">16:9 preview • Frame-accurate cutting</div>
+  </div>
+</div>
+
+<!-- Main card -->
+<div class="container">
+  <div class="card">
+    <div class="card-title">Download Clip</div>
+    <div class="card-sub">Paste a YouTube URL and choose your timestamps.</div>
+
+    <div class="field">
+      <label>YouTube URL</label>
+      <input type="text" id="ytUrl" class="input" placeholder="https://www.youtube.com/watch?v=...">
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Mode</label>
+        <select id="ytMode" class="input select">
+          <option value="video">Video (MP4)</option>
+          <option value="audio">Audio (MP3)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Quality</label>
+        <select id="ytQuality" class="input select">
+          <option value="720" selected>720p (fast)</option>
+          <option value="480">480p (fastest)</option>
+          <option value="1080">1080p</option>
+          <option value="best">Best (slower)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label>Start (seconds)</label>
+        <input type="number" id="ytStart" class="input" step="0.1" min="0" placeholder="0">
+      </div>
+      <div class="field">
+        <label>End (seconds)</label>
+        <input type="number" id="ytEnd" class="input" step="0.1" min="0" placeholder="full">
+      </div>
+    </div>
+
+    <button class="btn-primary" id="btnYtDownload">Download Clip</button>
+
+    <div class="status" id="ytStatusWrap">
+      <div class="spinner" id="ytSpinner"></div>
+      <span id="ytStatus">Ready to download.</span>
+    </div>
+
+    <div class="result" id="ytResult">
+      <a id="ytDownloadLink" href="#" download>⬇ Save file to device</a>
+    </div>
+  </div>
+</div>
+
+<footer class="footer">
+  YTClip — Built for speed. No ads. No watermarks. © 2026
+</footer>
+
+<!-- hidden canvas for legacy -->
+<canvas id="previewCanvas" width="1280" height="720" style="display:none;"></canvas>
+
+<script src="js/app.js" defer></script>
+<script>
+  // Theme + accent color logic (world-class UX)
+  (function() {
+    const root = document.documentElement;
+    const toggle = document.getElementById('themeToggle');
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    root.setAttribute('data-theme', savedTheme);
+    toggle.textContent = savedTheme === 'dark' ? '🌙' : '☀️';
+
+    toggle.addEventListener('click', () => {
+      const cur = root.getAttribute('data-theme');
+      const next = cur === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      toggle.textContent = next === 'dark' ? '🌙' : '☀️';
+    });
+
+    function setAccent(color) {
+      root.style.setProperty('--accent', color);
+      // derive accent-2 (lighter)
+      root.style.setProperty('--accent-2', color);
+      root.style.setProperty('--accent-glow', color + '73');
+      localStorage.setItem('accent', color);
+    }
+    const savedAccent = localStorage.getItem('accent');
+    if (savedAccent) setAccent(savedAccent);
+
+    document.querySelectorAll('.swatch').forEach(s => {
+      s.addEventListener('click', () => {
+        document.querySelectorAll('.swatch').forEach(x => x.classList.remove('active'));
+        s.classList.add('active');
+        setAccent(s.dataset.color);
+        document.getElementById('customColor').value = s.dataset.color;
+      });
+    });
+    document.getElementById('customColor').addEventListener('input', e => {
+      setAccent(e.target.value);
+      document.querySelectorAll('.swatch').forEach(x => x.classList.remove('active'));
+    });
+  })();
+</script>
+</body>
+</html>
