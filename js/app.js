@@ -470,6 +470,9 @@ $('#btnYtDownload').addEventListener('click', async () => {
   $('#ytStatusWrap').classList.add('loading');
   $('#ytStatus').textContent = 'Starting download...';
   $('#ytResult').classList.remove('show');
+  $('#ytProgressWrap').style.display = 'block';
+  $('#ytProgressFill').style.width = '0%';
+  $('#ytProgressText').textContent = '0%';
   try {
     const res = await fetch('/api/yt/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, mode, quality, start, end }) });
     const data = await res.json();
@@ -479,17 +482,23 @@ $('#btnYtDownload').addEventListener('click', async () => {
       await new Promise(r => setTimeout(r, 2000));
       const s = await fetch('/api/yt/status/' + ytJobId);
       const st = await s.json();
-      $('#ytStatus').textContent = 'Status: ' + st.status;
+      const pct = st.progress || 0;
+      $('#ytProgressFill').style.width = pct + '%';
+      $('#ytProgressText').textContent = pct + '%';
+      $('#ytStatus').textContent = 'Status: ' + st.status + ' (' + pct + '%)';
       if (st.status === 'done') {
         ytFileUrl = st.url;
         ytFileName = st.file;
         $('#ytStatus').textContent = 'Done: ' + (st.title || st.file);
         $('#ytDownloadLink').href = st.url;
         $('#ytDownloadLink').download = st.file;
+        $('#ytProgressFill').style.width = '100%';
+        $('#ytProgressText').textContent = '100%';
         $('#ytResult').classList.add('show');
         break;
       }
       if (st.status === 'error') {
+        $('#ytProgressWrap').style.display = 'none';
         alert('❌ ' + (st.error || 'Download failed'));
         break;
       }
