@@ -67,6 +67,7 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
                 break
         if final is None:
             raise RuntimeError("Output file not found")
+        job["progress"] = 100
         job["status"] = "done"
         job["file"] = os.path.basename(final)
         job["title"] = os.path.splitext(os.path.basename(final))[0]
