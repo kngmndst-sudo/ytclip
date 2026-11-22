@@ -479,7 +479,7 @@ $('#btnYtDownload').addEventListener('click', async () => {
     if (data.error) { alert('❌ ' + data.error); return; }
     ytJobId = data.job_id;
     while (true) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 500));
       const s = await fetch('/api/yt/status/' + ytJobId);
       const st = await s.json();
       const pct = st.progress || 0;
