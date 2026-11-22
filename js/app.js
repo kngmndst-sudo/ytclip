@@ -515,5 +515,49 @@ function renderAll() {
 }
 renderAll();
 pushHistory();
+// ---------- Transcript extractor ----------
+$('#btnTrExtract').addEventListener('click', async () => {
+  const url = $('#trUrl').value.trim();
+  if (!url) return alert('Paste a YouTube URL');
+  const lang = $('#trLang').value;
+  $('#btnTrExtract').disabled = true;
+  $('#trStatusWrap').classList.add('loading');
+  $('#trStatus').textContent = 'Extracting transcript...';
+  $('#trResult').classList.remove('show');
+  try {
+    const res = await fetch('/api/yt/transcript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, lang })
+    });
+    const data = await res.json();
+    if (data.error) { alert('❌ ' + data.error); return; }
+    $('#trTitle').textContent = data.title || 'Transcript';
+    $('#trText').value = data.transcript || '';
+    $('#trResult').classList.add('show');
+    $('#trStatus').textContent = 'Extracted ✔ (' + (data.transcript || '').split('\n').length + ' lines)';
+  } catch (e) { alert('❌ ' + e); }
+  finally { $('#btnTrExtract').disabled = false; $('#trStatusWrap').classList.remove('loading'); }
+});
+
+$('#btnTrCopy').addEventListener('click', () => {
+  const ta = $('#trText');
+  ta.select();
+  document.execCommand('copy');
+  $('#trStatus').textContent = 'Copied to clipboard ✔';
+});
+
+$('#btnTrDownload').addEventListener('click', () => {
+  const text = $('#trText').value;
+  if (!text) return;
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'transcript.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
 // start render loop for video elements
 setInterval(() => { if (!state.playing) renderFrame(); }, 200);
