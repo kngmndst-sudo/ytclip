@@ -105,6 +105,78 @@ def yt_status(job_id):
         resp["error"] = job.get("error")
     return jsonify(resp)
 
+import re as _re
+
+def _parse_vtt(text):
+    lines = text.splitlines()
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line or line == "WEBVTT" or line.startswith("Kind:") or line.startswith("Language:") or line.startswith("NOTE") or "-->" in line:
+            continue
+        # remove tags
+        clean = _re.sub(r"<[^>]+>", "", line)
+        clean = clean.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        if clean and clean not in out[-1:] if out else True:
+            out.append(clean)
+    # dedupe consecutive
+    deduped = []
+    for l in out:
+        if not deduped or deduped[-1] != l:
+            deduped.append(l)
+    return "\n".join(deduped)
+
+@app.route("/api/yt/transcript", methods=["POST"])
+def yt_transcript():
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+    lang = (data.get("lang") or "en").strip()
+    if not url:
+        return jsonify({"error": "No URL"}), 400
+    work = os.path.join(DOWNLOAD_DIR, f"transcript_{uuid.uuid4().hex}")
+    os.makedirs(work, exist_ok=True)
+    try:
+        outtmpl = os.path.join(work, "sub.%(ext)s")
+        cmd = ["yt-dlp", "--no-warnings", "--write-auto-subs", "--write-subs",
+               "--sub-lang", lang, "--skip-download", "--sub-format", "vtt",
+               "-o", outtmpl, url]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
+        except subprocess.CalledProcessError as cpe:
+            # retry with all subs
+            cmd2 = ["yt-dlp", "--no-warnings", "--write-auto-subs", "--write-subs",
+                    "--sub-langs", "all", "--skip-download", "--sub-format", "vtt",
+                    "-o", outtmpl, url]
+            try:
+                subprocess.run(cmd2, check=True, capture_output=True, text=True, timeout=120)
+            except subprocess.CalledProcessError:
+                raise RuntimeError("No transcript/subtitles available for this video (or video not found)")
+        # find vtt file
+        vtt_file = None
+        for f in os.listdir(work):
+            if f.endswith(".vtt"):
+                vtt_file = os.path.join(work, f)
+                break
+        if not vtt_file:
+            return jsonify({"error": "No transcript/subtitles available for this video"}), 404
+        with open(vtt_file, "r", encoding="utf-8", errors="ignore") as fh:
+            vtt_text = fh.read()
+        transcript = _parse_vtt(vtt_text)
+        # title via cli
+        title = ""
+        try:
+            tproc = subprocess.run(["yt-dlp", "--no-warnings", "--skip-download", "--print", "title", url],
+                                   capture_output=True, text=True, timeout=60)
+            title = tproc.stdout.strip().splitlines()[0] if tproc.stdout.strip() else ""
+        except Exception:
+            pass
+        return jsonify({"title": title, "transcript": transcript, "language": lang})
+    except Exception as ex:
+        return jsonify({"error": str(ex)}), 400
+    finally:
+        import shutil
+        shutil.rmtree(work, ignore_errors=True)
+
 @app.route("/downloads/<path:filename>")
 def downloads(filename):
     return send_from_directory(DOWNLOAD_DIR, filename, as_attachment=True)
