@@ -23,7 +23,7 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
     try:
         job["status"] = "downloading"
         outtmpl = os.path.join(DOWNLOAD_DIR, f"{job_id}.%(ext)s")
-        cmd = ["yt-dlp", "--no-warnings"]
+        cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4"]
         # timestamps
         s = (start or "").strip()
         e = (end or "").strip()
@@ -31,7 +31,6 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
             left = s if s else "0"
             right = e if e else "inf"
             cmd += ["--download-sections", f"*{left}-{right}"]
-            cmd += ["--force-keyframes-at-cuts"]
         if mode == "audio":
             cmd += ["-x", "--audio-format", "mp3", "--audio-quality", "192K"]
         else:
@@ -41,7 +40,25 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
                 fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             cmd += ["-f", fmt, "--merge-output-format", "mp4"]
         cmd += ["-o", outtmpl, url]
-        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=600)
+
+        job["progress"] = 0
+        job["status"] = "downloading"
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in proc.stdout:
+            line = line.strip()
+            # parse progress: [download]  45.0% of 10.00MiB at 1.00MiB/s ETA 00:05
+            if "[download]" in line and "%" in line:
+                try:
+                    pct_str = line.split("%")[0].split()[-1]
+                    pct = float(pct_str)
+                    job["progress"] = int(pct)
+                except Exception:
+                    pass
+            elif "Merging" in line or "Extracting" in line or "Post-processing" in line:
+                job["progress"] = 99
+        proc.wait(timeout=600)
+        if proc.returncode != 0:
+            raise RuntimeError("yt-dlp failed")
         # find output file
         final = None
         for f in os.listdir(DOWNLOAD_DIR):
@@ -68,7 +85,7 @@ def yt_download():
     if not url:
         return jsonify({"error": "No URL"}), 400
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "queued", "file": None}
+    jobs[job_id] = {"status": "queued", "file": None, "progress": 0}
     t = threading.Thread(target=_run_download, args=(job_id, url, mode, quality, start, end), daemon=True)
     t.start()
     return jsonify({"job_id": job_id})
@@ -78,7 +95,7 @@ def yt_status(job_id):
     job = jobs.get(job_id)
     if not job:
         return jsonify({"error": "Not found"}), 404
-    resp = {"status": job["status"]}
+    resp = {"status": job["status"], "progress": job.get("progress", 0)}
     if job["status"] == "done":
         resp["file"] = job["file"]
         resp["url"] = "/downloads/" + job["file"]
