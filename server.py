@@ -133,11 +133,47 @@ def yt_transcript():
     lang = (data.get("lang") or "en").strip()
     if not url:
         return jsonify({"error": "No URL"}), 400
+    # Extract video ID
+    vid_match = _re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{11})", url)
+    video_id = vid_match.group(1) if vid_match else url
+
+    # Title via cli
+    title = ""
+    try:
+        tproc = subprocess.run(["yt-dlp", "--no-warnings", "--skip-download", "--print", "title", url],
+                               capture_output=True, text=True, timeout=60)
+        title = tproc.stdout.strip().splitlines()[0] if tproc.stdout.strip() else ""
+    except Exception:
+        pass
+
+    # Method 1: youtube-transcript-api (fast, reliable)
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        ytt = YouTubeTranscriptApi()
+        available = [t.language_code for t in ytt.list(video_id)]
+        # try requested lang, then any available
+        langs_to_try = [lang] + [l for l in available if l != lang]
+        transcript_obj = None
+        used_lang = lang
+        for l in langs_to_try:
+            try:
+                transcript_obj = ytt.fetch(video_id, languages=[l])
+                used_lang = l
+                break
+            except Exception:
+                continue
+        if transcript_obj is not None:
+            lines = [s.text for s in transcript_obj.snippets]
+            transcript = "\n".join(lines)
+            return jsonify({"title": title, "transcript": transcript, "language": used_lang})
+    except Exception:
+        pass
+
+    # Method 2: yt-dlp fallback
     work = os.path.join(DOWNLOAD_DIR, f"transcript_{uuid.uuid4().hex}")
     os.makedirs(work, exist_ok=True)
     try:
         outtmpl = os.path.join(work, "sub.%(ext)s")
-        # First try requested language, then all available
         for sub_args in (["--sub-lang", lang], ["--sub-langs", "all"]):
             cmd = ["yt-dlp", "--no-warnings", "--write-auto-subs", "--write-subs"] + sub_args + [
                 "--skip-download", "--sub-format", "vtt", "-o", outtmpl, url]
@@ -151,25 +187,10 @@ def yt_transcript():
         vtt_files = [f for f in os.listdir(work) if f.endswith(".vtt")]
         if not vtt_files:
             raise RuntimeError("This video has no subtitles/captions. Try a different video or check if captions are enabled on YouTube.")
-        # find vtt file
-        vtt_file = None
-        for f in os.listdir(work):
-            if f.endswith(".vtt"):
-                vtt_file = os.path.join(work, f)
-                break
-        if not vtt_file:
-            return jsonify({"error": "No transcript/subtitles available for this video"}), 404
+        vtt_file = os.path.join(work, vtt_files[0])
         with open(vtt_file, "r", encoding="utf-8", errors="ignore") as fh:
             vtt_text = fh.read()
         transcript = _parse_vtt(vtt_text)
-        # title via cli
-        title = ""
-        try:
-            tproc = subprocess.run(["yt-dlp", "--no-warnings", "--skip-download", "--print", "title", url],
-                                   capture_output=True, text=True, timeout=60)
-            title = tproc.stdout.strip().splitlines()[0] if tproc.stdout.strip() else ""
-        except Exception:
-            pass
         return jsonify({"title": title, "transcript": transcript, "language": lang})
     except Exception as ex:
         return jsonify({"error": str(ex)}), 400
