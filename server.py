@@ -137,20 +137,20 @@ def yt_transcript():
     os.makedirs(work, exist_ok=True)
     try:
         outtmpl = os.path.join(work, "sub.%(ext)s")
-        cmd = ["yt-dlp", "--no-warnings", "--write-auto-subs", "--write-subs",
-               "--sub-lang", lang, "--skip-download", "--sub-format", "vtt",
-               "-o", outtmpl, url]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
-        except subprocess.CalledProcessError as cpe:
-            # retry with all subs
-            cmd2 = ["yt-dlp", "--no-warnings", "--write-auto-subs", "--write-subs",
-                    "--sub-langs", "all", "--skip-download", "--sub-format", "vtt",
-                    "-o", outtmpl, url]
+        # First try requested language, then all available
+        for sub_args in (["--sub-lang", lang], ["--sub-langs", "all"]):
+            cmd = ["yt-dlp", "--no-warnings", "--write-auto-subs", "--write-subs"] + sub_args + [
+                "--skip-download", "--sub-format", "vtt", "-o", outtmpl, url]
             try:
-                subprocess.run(cmd2, check=True, capture_output=True, text=True, timeout=120)
+                subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
+                vtt_files = [f for f in os.listdir(work) if f.endswith(".vtt")]
+                if vtt_files:
+                    break
             except subprocess.CalledProcessError:
-                raise RuntimeError("No transcript/subtitles available for this video (or video not found)")
+                continue
+        vtt_files = [f for f in os.listdir(work) if f.endswith(".vtt")]
+        if not vtt_files:
+            raise RuntimeError("This video has no subtitles/captions. Try a different video or check if captions are enabled on YouTube.")
         # find vtt file
         vtt_file = None
         for f in os.listdir(work):
