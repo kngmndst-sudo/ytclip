@@ -107,6 +107,39 @@ def yt_status(job_id):
 
 import re as _re
 
+_MUSIC_SYMBOLS = set("♪♫🎵🎶♬♩♭♯")
+
+def _strip_music_symbols(text):
+    return "".join(c for c in text if c not in _MUSIC_SYMBOLS).strip()
+
+def _is_noise_line(line):
+    s = line.strip()
+    if not s:
+        return True
+    # pure bracketed tag like [music], [applause], [laughter]
+    if s.startswith("[") and s.endswith("]"):
+        return True
+    # only music/sound symbols
+    if all(c in _MUSIC_SYMBOLS or c.isspace() for c in s):
+        return True
+    # after stripping music symbols, if empty or just brackets, it's noise
+    cleaned = _strip_music_symbols(s)
+    if not cleaned:
+        return True
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        return True
+    return False
+
+def _clean_transcript_lines(lines):
+    out = []
+    for l in lines:
+        if _is_noise_line(l):
+            continue
+        cleaned = _strip_music_symbols(l)
+        if cleaned:
+            out.append(cleaned)
+    return out
+
 def _parse_vtt(text):
     lines = text.splitlines()
     out = []
@@ -117,7 +150,8 @@ def _parse_vtt(text):
         # remove tags
         clean = _re.sub(r"<[^>]+>", "", line)
         clean = clean.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-        if clean and clean not in out[-1:] if out else True:
+        clean = _strip_music_symbols(clean)
+        if clean and not _is_noise_line(clean) and (clean not in out[-1:] if out else True):
             out.append(clean)
     # dedupe consecutive
     deduped = []
@@ -163,7 +197,7 @@ def yt_transcript():
             except Exception:
                 continue
         if transcript_obj is not None:
-            lines = [s.text for s in transcript_obj.snippets]
+            lines = _clean_transcript_lines([s.text for s in transcript_obj.snippets])
             transcript = "\n".join(lines)
             return jsonify({"title": title, "transcript": transcript, "language": used_lang})
     except Exception:
