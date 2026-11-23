@@ -550,11 +550,13 @@ $('#btnTrCopy').addEventListener('click', () => {
 $('#btnTrDownload').addEventListener('click', () => {
   const text = $('#trText').value;
   if (!text) return;
+  const title = ($('#trTitle').textContent || 'transcript').trim() || 'transcript';
+  const safe = title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 120);
   const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'transcript.txt';
+  a.download = safe + '.txt';
   a.click();
   URL.revokeObjectURL(url);
 });
