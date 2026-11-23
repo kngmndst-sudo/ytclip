@@ -18,12 +18,34 @@ def index():
 def static_files(p):
     return send_from_directory(BASE, p)
 
+import re as _re2
+
+def _safe_filename(name):
+    # Remove invalid filesystem characters
+    name = _re2.sub(r'[\\/:*?"<>|]', "_", name)
+    name = name.strip().strip(".")
+    if not name:
+        name = "download"
+    # Limit length
+    if len(name) > 120:
+        name = name[:120].rstrip()
+    return name
+
 def _run_download(job_id, url, mode, quality, start="", end=""):
     job = jobs[job_id]
     try:
         job["status"] = "downloading"
-        outtmpl = os.path.join(DOWNLOAD_DIR, f"{job_id}.%(ext)s")
-        cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4"]
+        # Get video title for filename
+        title = ""
+        try:
+            tproc = subprocess.run(["yt-dlp", "--no-warnings", "--skip-download", "--print", "title", url],
+                                   capture_output=True, text=True, timeout=60)
+            title = tproc.stdout.strip().splitlines()[0] if tproc.stdout.strip() else ""
+        except Exception:
+            title = ""
+        safe = _safe_filename(title) if title else job_id
+        outtmpl = os.path.join(DOWNLOAD_DIR, f"{safe}.%(ext)s")
+        cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4", "--force-overwrites"]
         # timestamps
         s = (start or "").strip()
         e = (end or "").strip()
@@ -59,18 +81,25 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
         proc.wait(timeout=600)
         if proc.returncode != 0:
             raise RuntimeError("yt-dlp failed")
-        # find output file
+        # find output file (by safe title prefix + expected extension)
+        ext = ".mp3" if mode == "audio" else ".mp4"
         final = None
         for f in os.listdir(DOWNLOAD_DIR):
-            if f.startswith(job_id):
+            if f.startswith(safe) and f.endswith(ext):
                 final = os.path.join(DOWNLOAD_DIR, f)
                 break
+        if final is None:
+            # fallback: any file with the right extension, newest first
+            candidates = [f for f in os.listdir(DOWNLOAD_DIR) if f.endswith(ext)]
+            if candidates:
+                candidates.sort(key=lambda x: os.path.getmtime(os.path.join(DOWNLOAD_DIR, x)), reverse=True)
+                final = os.path.join(DOWNLOAD_DIR, candidates[0])
         if final is None:
             raise RuntimeError("Output file not found")
         job["progress"] = 100
         job["status"] = "done"
         job["file"] = os.path.basename(final)
-        job["title"] = os.path.splitext(os.path.basename(final))[0]
+        job["title"] = title if title else os.path.splitext(os.path.basename(final))[0]
     except Exception as ex:
         job["status"] = "error"
         job["error"] = str(ex)
