@@ -66,8 +66,10 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
         job["progress"] = 0
         job["status"] = "downloading"
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        err_lines = []
         for line in proc.stdout:
             line = line.strip()
+            err_lines.append(line)
             # parse progress: [download]  45.0% of 10.00MiB at 1.00MiB/s ETA 00:05
             if "[download]" in line and "%" in line:
                 try:
@@ -80,7 +82,15 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
                 job["progress"] = 99
         proc.wait(timeout=600)
         if proc.returncode != 0:
-            raise RuntimeError("yt-dlp failed")
+            # extract meaningful error
+            err_msg = ""
+            for l in reversed(err_lines):
+                if "ERROR" in l or "error" in l.lower():
+                    err_msg = l
+                    break
+            if not err_msg and err_lines:
+                err_msg = err_lines[-1]
+            raise RuntimeError(err_msg if err_msg else "yt-dlp failed")
         # find output file (by safe title prefix + expected extension)
         ext = ".mp3" if mode == "audio" else ".mp4"
         final = None
