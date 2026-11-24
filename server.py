@@ -20,6 +20,20 @@ def static_files(p):
 
 import re as _re2
 
+def _to_seconds(v):
+    v = (v or "").strip()
+    if not v:
+        return ""
+    parts = v.split(":")
+    try:
+        if len(parts) == 3:
+            return str(int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2]))
+        elif len(parts) == 2:
+            return str(int(parts[0]) * 60 + float(parts[1]))
+    except ValueError:
+        pass
+    return v
+
 def _safe_filename(name):
     # Remove invalid filesystem characters
     name = _re2.sub(r'[\\/:*?"<>|]', "_", name)
@@ -46,9 +60,9 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
         safe = _safe_filename(title) if title else job_id
         outtmpl = os.path.join(DOWNLOAD_DIR, f"{safe}.%(ext)s")
         cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4", "--force-overwrites"]
-        # timestamps
-        s = (start or "").strip()
-        e = (end or "").strip()
+        # timestamps (support HH:MM:SS)
+        s = _to_seconds(start)
+        e = _to_seconds(end)
         if s or e:
             left = s if s else "0"
             right = e if e else "inf"
