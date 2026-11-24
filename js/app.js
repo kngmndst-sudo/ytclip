@@ -464,8 +464,20 @@ $('#btnYtDownload').addEventListener('click', async () => {
   if (!url) return alert('Paste a YouTube URL');
   const mode = $('#ytMode').value;
   const quality = $('#ytQuality').value;
-  const start = $('#ytStart').value.trim();
-  const end = $('#ytEnd').value.trim();
+  function toSeconds(v) {
+    v = (v || '').trim();
+    if (!v) return '';
+    // HH:MM:SS or MM:SS or seconds
+    const parts = v.split(':');
+    if (parts.length === 3) {
+      return String(parseInt(parts[0]||0)*3600 + parseInt(parts[1]||0)*60 + parseFloat(parts[2]||0));
+    } else if (parts.length === 2) {
+      return String(parseInt(parts[0]||0)*60 + parseFloat(parts[1]||0));
+    }
+    return v; // already seconds
+  }
+  const start = toSeconds($('#ytStart').value);
+  const end = toSeconds($('#ytEnd').value);
   $('#btnYtDownload').disabled = true;
   $('#ytStatusWrap').classList.add('loading');
   $('#ytStatus').textContent = 'Starting download...';
