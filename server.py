@@ -52,14 +52,15 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
         # Get video title for filename
         title = ""
         try:
-            tproc = subprocess.run(["yt-dlp", "--no-warnings", "--skip-download", "--print", "title", url],
+            tproc = subprocess.run(["yt-dlp", "--no-warnings", "--extractor-args", "youtube:player_client=android,web", "--skip-download", "--print", "title", url],
                                    capture_output=True, text=True, timeout=60)
             title = tproc.stdout.strip().splitlines()[0] if tproc.stdout.strip() else ""
         except Exception:
             title = ""
         safe = _safe_filename(title) if title else job_id
         outtmpl = os.path.join(DOWNLOAD_DIR, f"{safe}.%(ext)s")
-        cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4", "--force-overwrites"]
+        cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4", "--force-overwrites",
+               "--extractor-args", "youtube:player_client=android,web"]
         # timestamps (support HH:MM:SS)
         s = _to_seconds(start)
         e = _to_seconds(end)
@@ -161,25 +162,34 @@ def yt_status(job_id):
 import re as _re
 
 _MUSIC_SYMBOLS = set("♪♫🎵🎶♬♩♭♯")
+_NOISE_WORDS = {"music", "applause", "laughter", "cheering", "silence", "inaudible", "crowd", "noise", "sound", "effect", "sigh", "cough", "gasp", "whisper"}
 
 def _strip_music_symbols(text):
     return "".join(c for c in text if c not in _MUSIC_SYMBOLS).strip()
+
+def _remove_bracket_tags(text):
+    # Remove bracketed tags like [music], [♪ ... ♪], (music) from anywhere in text
+    text = _re.sub(r"\[[^\]]*\]", "", text)
+    text = _re.sub(r"\([^)]*\b(?:music|applause|laughter|cheering|silence|inaudible)\b[^)]*\)", "", text, flags=_re.IGNORECASE)
+    return text.strip()
 
 def _is_noise_line(line):
     s = line.strip()
     if not s:
         return True
-    # pure bracketed tag like [music], [applause], [laughter]
+    # remove inline brackets for checking
+    cleaned = _remove_bracket_tags(s)
+    cleaned = _strip_music_symbols(cleaned)
+    if not cleaned:
+        return True
+    # pure bracketed tag
     if s.startswith("[") and s.endswith("]"):
         return True
     # only music/sound symbols
-    if all(c in _MUSIC_SYMBOLS or c.isspace() for c in s):
+    if all(c in _MUSIC_SYMBOLS or c.isspace() or c in "[]()" for c in s):
         return True
-    # after stripping music symbols, if empty or just brackets, it's noise
-    cleaned = _strip_music_symbols(s)
-    if not cleaned:
-        return True
-    if cleaned.startswith("[") and cleaned.endswith("]"):
+    # check if remaining text is a noise word
+    if cleaned.lower().strip("[]() ") in _NOISE_WORDS:
         return True
     return False
 
@@ -188,7 +198,9 @@ def _clean_transcript_lines(lines):
     for l in lines:
         if _is_noise_line(l):
             continue
-        cleaned = _strip_music_symbols(l)
+        cleaned = _remove_bracket_tags(l)
+        cleaned = _strip_music_symbols(cleaned)
+        cleaned = " ".join(cleaned.split())  # normalize whitespace
         if cleaned:
             out.append(cleaned)
     return out
@@ -203,7 +215,9 @@ def _parse_vtt(text):
         # remove tags
         clean = _re.sub(r"<[^>]+>", "", line)
         clean = clean.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        clean = _remove_bracket_tags(clean)
         clean = _strip_music_symbols(clean)
+        clean = " ".join(clean.split())
         if clean and not _is_noise_line(clean) and (clean not in out[-1:] if out else True):
             out.append(clean)
     # dedupe consecutive
@@ -224,14 +238,25 @@ def yt_transcript():
     vid_match = _re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{11})", url)
     video_id = vid_match.group(1) if vid_match else url
 
-    # Title via cli
+    # Title via YouTube oEmbed (no auth needed, avoids bot checks)
     title = ""
     try:
-        tproc = subprocess.run(["yt-dlp", "--no-warnings", "--skip-download", "--print", "title", url],
-                               capture_output=True, text=True, timeout=60)
-        title = tproc.stdout.strip().splitlines()[0] if tproc.stdout.strip() else ""
+        import urllib.parse
+        oembed_url = "https://www.youtube.com/oembed?url=" + urllib.parse.quote(url, safe="") + "&format=json"
+        with urllib.request.urlopen(oembed_url, timeout=10) as resp:
+            info = json.loads(resp.read())
+            title = info.get("title", "")
     except Exception:
         pass
+    if not title:
+        # fallback: yt-dlp (may hit bot check)
+        try:
+            tproc = subprocess.run(["yt-dlp", "--no-warnings", "--extractor-args", "youtube:player_client=android,web", "--skip-download", "--print", "title", url],
+                                   capture_output=True, text=True, timeout=60)
+            if tproc.returncode == 0 and tproc.stdout.strip():
+                title = tproc.stdout.strip().splitlines()[0]
+        except Exception:
+            pass
 
     # Method 1: youtube-transcript-api (fast, reliable)
     try:
@@ -262,7 +287,8 @@ def yt_transcript():
     try:
         outtmpl = os.path.join(work, "sub.%(ext)s")
         for sub_args in (["--sub-lang", lang], ["--sub-langs", "all"]):
-            cmd = ["yt-dlp", "--no-warnings", "--write-auto-subs", "--write-subs"] + sub_args + [
+            cmd = ["yt-dlp", "--no-warnings", "--extractor-args", "youtube:player_client=android,web",
+                   "--write-auto-subs", "--write-subs"] + sub_args + [
                 "--skip-download", "--sub-format", "vtt", "-o", outtmpl, url]
             try:
                 subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
