@@ -96,18 +96,8 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
             elif "Merging" in line or "Extracting" in line or "Post-processing" in line:
                 job["progress"] = 99
         proc.wait(timeout=600)
-        if proc.returncode != 0:
-            # extract meaningful error
-            err_msg = ""
-            for l in reversed(err_lines):
-                if "ERROR" in l or "error" in l.lower():
-                    err_msg = l
-                    break
-            if not err_msg and err_lines:
-                err_msg = err_lines[-1]
-            raise RuntimeError(err_msg if err_msg else "yt-dlp failed")
-        # find output file (by safe title prefix + expected extension)
         ext = ".mp3" if mode == "audio" else ".mp4"
+        # find output file
         final = None
         for f in os.listdir(DOWNLOAD_DIR):
             if f.startswith(safe) and f.endswith(ext):
@@ -119,8 +109,25 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
             if candidates:
                 candidates.sort(key=lambda x: os.path.getmtime(os.path.join(DOWNLOAD_DIR, x)), reverse=True)
                 final = os.path.join(DOWNLOAD_DIR, candidates[0])
-        if final is None:
-            raise RuntimeError("Output file not found")
+        if final is None or not os.path.exists(final):
+            # extract meaningful error (skip warnings)
+            err_msg = ""
+            for l in reversed(err_lines):
+                if "ERROR" in l.upper():
+                    err_msg = l
+                    break
+            if not err_msg:
+                for l in reversed(err_lines):
+                    if "error" in l.lower() and "warning" not in l.lower():
+                        err_msg = l
+                        break
+            if not err_msg and err_lines:
+                for l in reversed(err_lines):
+                    if "warning" not in l.lower():
+                        err_msg = l
+                        break
+            raise RuntimeError(err_msg if err_msg else "yt-dlp failed")
+        # success
         job["progress"] = 100
         job["status"] = "done"
         job["file"] = os.path.basename(final)
