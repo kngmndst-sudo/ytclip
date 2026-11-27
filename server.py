@@ -72,9 +72,9 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
             cmd += ["-x", "--audio-format", "mp3", "--audio-quality", "192K"]
         else:
             if quality and quality != "best":
-                fmt = f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}]/best"
+                fmt = f"bestvideo[height<={quality}][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}]/best"
             else:
-                fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                fmt = "bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             cmd += ["-f", fmt, "--merge-output-format", "mp4"]
         cmd += ["-o", outtmpl, url]
 
@@ -118,9 +118,9 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
                     cmd_fb += ["-x", "--audio-format", "mp3", "--audio-quality", "192K"]
                 else:
                     if quality and quality != "best":
-                        fmt = f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}]/best"
+                        fmt = f"bestvideo[height<={quality}][vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}]/best"
                     else:
-                        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                        fmt = "bestvideo[vcodec^=avc][ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
                     cmd_fb += ["-f", fmt, "--merge-output-format", "mp4"]
                 cmd_fb += ["-o", outtmpl, url]
                 rc2, err_lines2 = run_cmd(cmd_fb)
