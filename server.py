@@ -59,8 +59,8 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
             title = ""
         safe = _safe_filename(title) if title else job_id
         outtmpl = os.path.join(DOWNLOAD_DIR, f"{safe}.%(ext)s")
-        cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4", "--force-overwrites",
-               "--extractor-args", "youtube:player_client=android,web"]
+        # Try high-quality (default client) first; fall back to android client if bot check blocks
+        cmd = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4", "--force-overwrites"]
         # timestamps (support HH:MM:SS)
         s = _to_seconds(start)
         e = _to_seconds(end)
@@ -80,22 +80,53 @@ def _run_download(job_id, url, mode, quality, start="", end=""):
 
         job["progress"] = 0
         job["status"] = "downloading"
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        err_lines = []
-        for line in proc.stdout:
-            line = line.strip()
-            err_lines.append(line)
-            # parse progress: [download]  45.0% of 10.00MiB at 1.00MiB/s ETA 00:05
-            if "[download]" in line and "%" in line:
-                try:
-                    pct_str = line.split("%")[0].split()[-1]
-                    pct = float(pct_str)
-                    job["progress"] = int(pct)
-                except Exception:
-                    pass
-            elif "Merging" in line or "Extracting" in line or "Post-processing" in line:
-                job["progress"] = 99
-        proc.wait(timeout=600)
+
+        def run_cmd(cmd_list):
+            proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            lines = []
+            for line in proc.stdout:
+                line = line.strip()
+                lines.append(line)
+                if "[download]" in line and "%" in line:
+                    try:
+                        pct_str = line.split("%")[0].split()[-1]
+                        pct = float(pct_str)
+                        job["progress"] = int(pct)
+                    except Exception:
+                        pass
+                elif "Merging" in line or "Extracting" in line or "Post-processing" in line:
+                    job["progress"] = 99
+            proc.wait(timeout=600)
+            return proc.returncode, lines
+
+        # Try high-quality default first
+        rc, err_lines = run_cmd(cmd)
+        bot_blocked = any("Sign in to confirm" in l or "bot" in l.lower() for l in err_lines)
+
+        # Fall back to android client if bot check blocked
+        if bot_blocked or rc != 0:
+            # check if file was created
+            ext = ".mp3" if mode == "audio" else ".mp4"
+            found = any(f.startswith(safe) and f.endswith(ext) for f in os.listdir(DOWNLOAD_DIR))
+            if not found:
+                # rebuild command properly
+                cmd_fb = ["yt-dlp", "--no-warnings", "--newline", "--progress", "--concurrent-fragments", "4",
+                          "--force-overwrites", "--extractor-args", "youtube:player_client=android,web"]
+                if s or e:
+                    cmd_fb += ["--download-sections", f"*{s if s else '0'}-{e if e else 'inf'}"]
+                if mode == "audio":
+                    cmd_fb += ["-x", "--audio-format", "mp3", "--audio-quality", "192K"]
+                else:
+                    if quality and quality != "best":
+                        fmt = f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}]/best"
+                    else:
+                        fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+                    cmd_fb += ["-f", fmt, "--merge-output-format", "mp4"]
+                cmd_fb += ["-o", outtmpl, url]
+                rc2, err_lines2 = run_cmd(cmd_fb)
+                if rc2 != 0 and not any(f.startswith(safe) and f.endswith(ext) for f in os.listdir(DOWNLOAD_DIR)):
+                    err_lines = err_lines2
+                    rc = rc2
         ext = ".mp3" if mode == "audio" else ".mp4"
         # find output file
         final = None
